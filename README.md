@@ -1,4 +1,4 @@
 raft
 ====
 
-coding exercise, try to make a raft implementation
+Coding exercise trying to implement a k-v store based on RAFT algorithm.
