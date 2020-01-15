@@ -27,12 +27,7 @@ func (s *ServerServiceImpl) AppendEntries(ctx context.Context, req *pb.AppendEnt
 	return s.node.onAppendEntriesRequestReceived(ctx, req)
 }
 
-// Set ...
-func (s *ServerServiceImpl) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
-	return s.node.Set(ctx, req)
-}
-
-// Get ...
-func (s *ServerServiceImpl) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-	return s.node.Get(ctx, req)
+// Command ...
+func (s *ServerServiceImpl) Command(ctx context.Context, req *pb.CommandRequest) (*pb.CommandResponse, error) {
+	return s.node.Command(ctx, req)
 }

@@ -12,6 +12,8 @@ type Node struct {
 	ip     string // local outbound IP (used as ID)
 	others *nodeList
 
+	exe *Executor
+
 	role      Role
 	roleGuard sync.RWMutex
 
@@ -41,6 +43,7 @@ func NewNode(others []string) *Node {
 	n := &Node{
 		ip:     ip,
 		others: newNodeList(others),
+		exe:    &Executor{},
 
 		appendEntriesCalls: make(chan *pb.AppendEntriesRequest, 10),
 		appendEntriesResps: make(chan *pb.AppendEntriesResponse, 10),
@@ -60,16 +63,17 @@ func (n *Node) setRole(r Role) {
 
 // ====== public ======
 
-// Set ...
-func (n *Node) Set(ctx context.Context, req *pb.SetRequest) (*pb.SetResponse, error) {
-
-	return nil, nil
-}
-
-// Get ...
-func (n *Node) Get(ctx context.Context, req *pb.GetRequest) (*pb.GetResponse, error) {
-
-	return nil, nil
+// Command ...
+func (n *Node) Command(ctx context.Context, req *pb.CommandRequest) (*pb.CommandResponse, error) {
+	res, err := n.exe.Apply(ctx, req.Entry)
+	if err != nil {
+		return &pb.CommandResponse{
+			Result: err.Error(),
+		}, nil
+	}
+	return &pb.CommandResponse{
+		Result: res,
+	}, nil
 }
 
 // ====== Support gRPC communication ======
