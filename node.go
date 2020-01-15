@@ -21,6 +21,8 @@ type Node struct {
 	// votedFor: who I've voted in the current term
 	votedFor string
 
+	commitIndex uint64
+
 	// raft calls (reqs & resps)
 	// since we are using async pattern here
 	appendEntriesCalls chan *pb.AppendEntriesRequest

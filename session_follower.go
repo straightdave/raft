@@ -31,6 +31,7 @@ func (n *Node) asFollower() {
 	}
 }
 
+// handle the appendEntries requests from the leader, mainly just appending the data
 func (n *Node) handleAppendEntriesCallAsFollower(req *pb.AppendEntriesRequest) {
 
 }
@@ -45,8 +46,26 @@ func (n *Node) handleRequestVoteCallAsFollower(req *pb.RequestVoteRequest) {
 		return
 	}
 
-	if n.votedFor == "" || req.CandidateId {
-
+	// first time voting or last vote is the same candidate
+	if n.votedFor == "" || n.votedFor == req.CandidateId {
+		if req.LastLogIndex >= n.commitIndex {
+			n.requestVoteResps <- &pb.RequestVoteResponse{
+				Term:        term,
+				VoteGranted: true,
+			}
+		} else {
+			// if req's log is out-of-date, don't grant vote
+			n.requestVoteResps <- &pb.RequestVoteResponse{
+				Term:        term,
+				VoteGranted: false,
+			}
+		}
+		return
 	}
 
+	// other cases: vote granted
+	n.requestVoteResps <- &pb.RequestVoteResponse{
+		Term:        term,
+		VoteGranted: true,
+	}
 }
