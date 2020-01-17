@@ -4,40 +4,45 @@ import (
 	"sync"
 )
 
-type nodeList struct {
+// ServerList ...
+type ServerList struct {
 	sync.RWMutex
 	m map[string]int
 }
 
-func newNodeList(nodes []string) *nodeList {
-	res := &nodeList{m: make(map[string]int)}
-	for _, node := range nodes {
-		res.m[node] = 1
+// NewServerList ...
+func NewServerList(servers []string) *ServerList {
+	res := &ServerList{m: make(map[string]int)}
+	for _, server := range servers {
+		res.m[server] = 1
 	}
 	return res
 }
 
-func (l *nodeList) add(nodes ...string) {
-	l.Lock()
-	defer l.Unlock()
-	for _, node := range nodes {
-		l.m[node] = 1
+// Add ...
+func (s *ServerList) Add(servers ...string) {
+	s.Lock()
+	defer s.Unlock()
+	for _, server := range servers {
+		s.m[server] = 1
 	}
 }
 
-func (l *nodeList) remove(nodes ...string) {
-	l.Lock()
-	defer l.Unlock()
-	for _, node := range nodes {
-		delete(l.m, node)
+// Remove ...
+func (s *ServerList) Remove(servers ...string) {
+	s.Lock()
+	defer s.Unlock()
+	for _, server := range servers {
+		delete(s.m, server)
 	}
 }
 
-func (l *nodeList) snapshot() []string {
-	l.RLock()
-	defer l.RUnlock()
+// Snapshot ...
+func (s *ServerList) Snapshot() []string {
+	s.RLock()
+	defer s.RUnlock()
 	var res []string
-	for k := range l.m {
+	for k := range s.m {
 		res = append(res, k)
 	}
 	return res

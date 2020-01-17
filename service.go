@@ -7,27 +7,39 @@ import (
 )
 
 // ServerServiceImpl handles communication, but the main
-// logic is handled inside the Node instance.
+// logic is handled inside the Server instance.
 type ServerServiceImpl struct {
-	node *Node
+	server *Server
 }
 
-// NewServerServiceImpl ... 'nodes' is the initial list of other nodes.
-func NewServerServiceImpl(nodes []string) *ServerServiceImpl {
-	return &ServerServiceImpl{node: NewNode(nodes)}
+// NewServerServiceImpl ... 'servers' is the initial list of other nodes.
+func NewServerServiceImpl(servers []string) *ServerServiceImpl {
+	return &ServerServiceImpl{server: NewServer(servers)}
 }
 
 // RequestVote ...
 func (s *ServerServiceImpl) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
-	return s.node.onRequestVoteRequestReceived(ctx, req)
+	s.server.requestVoteCalls <- req
+	select {
+	case resp := <-s.server.requestVoteResps:
+		return resp, nil
+	}
 }
 
 // AppendEntries ...
 func (s *ServerServiceImpl) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
-	return s.node.onAppendEntriesRequestReceived(ctx, req)
+	s.server.appendEntriesCalls <- req
+	select {
+	case resp := <-s.server.appendEntriesResps:
+		return resp, nil
+	}
 }
 
 // Command ...
 func (s *ServerServiceImpl) Command(ctx context.Context, req *pb.CommandRequest) (*pb.CommandResponse, error) {
-	return s.node.Command(ctx, req)
+	s.server.commandCalls <- req
+	select {
+	case resp := <-s.server.commandResps:
+		return resp, nil
+	}
 }

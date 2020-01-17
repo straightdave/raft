@@ -1,45 +1,47 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/straightdave/raft/pb"
 )
 
-func (n *Node) asFollower() {
+func (s *Server) asFollower() {
 	log.Printf("> as follower")
-	n.setRole(FOLLOWER)
+	s.role = FOLLOWER
 
+	timeout := randomTimeout150300()
 	for {
-		// TODO: make heartbeat detect timeout configurable
-		timeout := randomTimeout150300()
-
 		select {
+		// if timeout, quit current session
 		case <-timeout:
-			go n.asCandidate()
+			go s.asCandidate()
 			return
 
-		/* handle other raft calls */
-		case req := <-n.appendEntriesCalls:
-			go n.handleAppendEntriesCallAsFollower(req)
-		case req := <-n.requestVoteCalls:
-			go n.handleRequestVoteCallAsFollower(req)
-
-			/* handle external calls */
-			// TODO: implement. mainly just redirection
+		// handle calls, not quitting session
+		case req := <-s.appendEntriesCalls:
+			go s.handleAppendEntriesCallAsFollower(req)
+			// only in this case, it would reset the timer
+			timeout = randomTimeout150300()
+		case req := <-s.requestVoteCalls:
+			go s.handleRequestVoteCallAsFollower(req)
+		case req := <-s.commandCalls:
+			go s.handleCommandsAsFollower(req)
 		}
 	}
 }
 
-// handle the appendEntries requests from the leader, mainly just appending the data
-func (n *Node) handleAppendEntriesCallAsFollower(req *pb.AppendEntriesRequest) {
+func (s *Server) handleAppendEntriesCallAsFollower(req *pb.AppendEntriesRequest) {
 
 }
 
-func (n *Node) handleRequestVoteCallAsFollower(req *pb.RequestVoteRequest) {
-	term := n.getTerm()
+func (s *Server) handleRequestVoteCallAsFollower(req *pb.RequestVoteRequest) {
+	term := s.currentTerm
+
+	// the requesting candidate is out-of-date
 	if term > req.Term {
-		n.requestVoteResps <- &pb.RequestVoteResponse{
+		s.requestVoteResps <- &pb.RequestVoteResponse{
 			Term:        term,
 			VoteGranted: false,
 		}
@@ -47,15 +49,15 @@ func (n *Node) handleRequestVoteCallAsFollower(req *pb.RequestVoteRequest) {
 	}
 
 	// first time voting or last vote is the same candidate
-	if n.votedFor == "" || n.votedFor == req.CandidateId {
-		if req.LastLogIndex >= n.commitIndex {
-			n.requestVoteResps <- &pb.RequestVoteResponse{
+	if s.votedFor == "" || s.votedFor == req.CandidateId {
+		if req.LastLogIndex >= s.commitIndex {
+			s.requestVoteResps <- &pb.RequestVoteResponse{
 				Term:        term,
 				VoteGranted: true,
 			}
 		} else {
 			// if req's log is out-of-date, don't grant vote
-			n.requestVoteResps <- &pb.RequestVoteResponse{
+			s.requestVoteResps <- &pb.RequestVoteResponse{
 				Term:        term,
 				VoteGranted: false,
 			}
@@ -64,8 +66,15 @@ func (n *Node) handleRequestVoteCallAsFollower(req *pb.RequestVoteRequest) {
 	}
 
 	// other cases: vote granted
-	n.requestVoteResps <- &pb.RequestVoteResponse{
+	s.requestVoteResps <- &pb.RequestVoteResponse{
 		Term:        term,
 		VoteGranted: true,
+	}
+}
+
+func (s *Server) handleCommandsAsFollower(req *pb.CommandRequest) {
+	// NOTE: here's defined a redirect command
+	s.commandResps <- &pb.CommandResponse{
+		Result: fmt.Sprintf("redirect %s", s.leader),
 	}
 }

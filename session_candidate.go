@@ -9,9 +9,9 @@ import (
 	"github.com/straightdave/raft/pb"
 )
 
-func (n *Node) asCandidate() {
+func (s *Server) asCandidate() {
 	log.Printf("> as candidate")
-	n.setRole(CANDIDATE)
+	s.role = CANDIDATE
 	ctx := context.Background()
 	cctx, cancelFunc := context.WithCancel(ctx)
 
@@ -21,12 +21,12 @@ func (n *Node) asCandidate() {
 
 	var (
 		voteNum = 0
-		others  = n.others.snapshot()
+		others  = s.others.Snapshot()
 	)
 
 	// increase current term before sending vote requests
-	n.incrTerm()
-	validVotes, stateTrans := n.requestVotes(cctx, others)
+	s.incrTerm()
+	validVotes, stateTrans := s.requestVotes(cctx, others)
 
 	for {
 		// TODO: make election timeout configurable
@@ -36,48 +36,47 @@ func (n *Node) asCandidate() {
 		case <-validVotes:
 			voteNum++
 			if voteNum > len(others)/2 { // majority
-				go n.asLeader()
+				go s.asLeader()
 				return
 			}
 
 		case role := <-stateTrans:
 			switch role {
 			case FOLLOWER:
-				go n.asFollower()
+				go s.asFollower()
 			case CANDIDATE:
-				go n.asCandidate()
+				go s.asCandidate()
 			case LEADER:
-				go n.asLeader()
+				go s.asLeader()
 			}
-			// NOTE: no matter what role it would be, it would return.
+			// NOTE: no matter what role it would be, it would returs.
 			// (actually only FOLLOWER)
 			return
 
 		case <-electionTimeout:
-			go n.asCandidate() // start another round of election
+			go s.asCandidate() // start another round of election
 			return
 
 		/* other raft endpoint calls */
 
-		case req := <-n.appendEntriesCalls:
+		case req := <-s.appendEntriesCalls:
 			// whenever receiving appendEntries calls, returns to FOLLOWER role
 			// (handle this request as a follower, don't waste it)
-			go n.handleAppendEntriesCallAsFollower(req)
-			go n.asFollower()
+			go s.handleAppendEntriesCallAsFollower(req)
+			go s.asFollower()
 			return
 
-		case req := <-n.requestVoteCalls:
+		case req := <-s.requestVoteCalls:
 			// whenever receiving other candidates' vote requests:
 			// => trans to FOLLOWER if req.Term is bigger;
 			// => others, ignore & carry on (no return)
 
-			if req.Term > n.getTerm() {
-				go n.asFollower()
+			if req.Term > s.currentTerm {
+				go s.asFollower()
 				return
 			}
 
-			/* other external calls */
-			// TODO: handle other external calls
+			// candidate don't handle external command calls
 		}
 	}
 }
@@ -86,20 +85,20 @@ func (n *Node) asCandidate() {
 // this is only called by node in the state of candidate.
 // one return value is the 'valid votes', value is the addr of the responder;
 // another return value is the 'state trans' indicater.
-func (n *Node) requestVotes(ctx context.Context, others []string) (<-chan string, <-chan Role) {
+func (s *Server) requestVotes(ctx context.Context, others []string) (<-chan string, <-chan Role) {
 	// initialize two indicator channels whenever begins to request votes
 	validVotes := make(chan string, len(others))
 	stateTrans := make(chan Role, 1)
 
-	for _, addr := range n.others.snapshot() {
-		go n.requestVoteFrom(ctx, validVotes, stateTrans, addr)
+	for _, addr := range s.others.Snapshot() {
+		go s.requestVoteFrom(ctx, validVotes, stateTrans, addr)
 	}
 	return validVotes, stateTrans
 }
 
 // start a goroutine to call one node's RequestVote and track.
 // if success, push addr into the valid votes channel.
-func (n *Node) requestVoteFrom(ctx context.Context, validVotes chan<- string, stateTrans chan<- Role, addr string) {
+func (s *Server) requestVoteFrom(ctx context.Context, validVotes chan<- string, stateTrans chan<- Role, addr string) {
 	cc, err := grpc.Dial(addr)
 	if err != nil {
 		return
@@ -108,14 +107,14 @@ func (n *Node) requestVoteFrom(ctx context.Context, validVotes chan<- string, st
 
 	c := pb.NewRaftClient(cc)
 	resp, err := c.RequestVote(ctx, &pb.RequestVoteRequest{
-		Term:        n.currentTerm, // sender's current term
-		CandidateId: n.ip,          // sender's ID (using IP here)
+		Term:        s.currentTerm, // sender's current term
+		CandidateId: s.ip,          // sender's ID (using IP here)
 	})
 	if err != nil {
 		return
 	}
 
-	if resp.Term > n.currentTerm {
+	if resp.Term > s.currentTerm {
 		// whenever it gets a response with a bigger term, it should
 		// return to the FOLLOWER role.
 		stateTrans <- FOLLOWER

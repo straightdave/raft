@@ -15,21 +15,18 @@ import (
 )
 
 var (
-	fPort          = flag.Uint("port", 8801, "local port to listen")
-	fOtherNodeList = flag.String("servers", "", "the initial node list separated by commas")
-
-	otherServers []string
-	terminated   chan struct{}
+	fPort         = flag.Uint("port", 8801, "local port to listen")
+	fOtherServers = flag.String("servers", "", "the initial server list separated by commas")
 )
 
 func init() {
 	flag.Parse()
-	otherServers = strings.Split(*fOtherNodeList, ",")
-	terminated = make(chan struct{})
 }
 
-// main function just setups up the gRPC service, listening and gracefully shutting down.
 func main() {
+	otherServers := strings.Split(*fOtherServers, ",")
+	terminated := make(chan struct{})
+
 	go func() {
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)

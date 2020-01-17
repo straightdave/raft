@@ -1,9 +1,14 @@
 package main
 
 import (
-	"context"
+	"errors"
 
 	"github.com/straightdave/raft/pb"
+)
+
+var (
+	// ErrNotSupported means such command has not been implemented yet.
+	ErrNotSupported = errors.New("not supported")
 )
 
 // Executor handles real command execution, working as the
@@ -12,7 +17,7 @@ type Executor struct {
 }
 
 // Apply ...
-func (e *Executor) Apply(ctx context.Context, entries ...*pb.CommandEntry) (string, error) {
+func (e *Executor) Apply(entries ...*pb.CommandEntry) (string, error) {
 
 	return "", nil
 }
