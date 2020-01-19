@@ -10,25 +10,24 @@ import (
 )
 
 func (s *Server) asCandidate() {
-	log.Printf("> as candidate")
-	s.role = CANDIDATE
 	ctx := context.Background()
 	cctx, cancelFunc := context.WithCancel(ctx)
-
-	// when this function returns (ends), all sub-goroutines started with
-	// the context:cctx would receive cancel signals to stop working.
 	defer cancelFunc()
 
 	var (
-		voteNum = 0
+		voteNum = 1 // start with 1 vote from oneself
 		others  = s.others.Snapshot()
 	)
 
-	// increase current term before sending vote requests
+	s.role = CANDIDATE
 	s.incrTerm()
-	validVotes, stateTrans := s.requestVotes(cctx, others)
+	s.votedFor = s.ip // vote for self
 
+	log.Printf("Becomes CANDIDIATE {%d}", s.currentTerm)
+
+	validVotes, stateTrans := s.requestVotes(cctx, others)
 	for {
+		// create/reset the election timeout for a new election.
 		// TODO: make election timeout configurable
 		electionTimeout := randomTimeout150300()
 
@@ -41,42 +40,42 @@ func (s *Server) asCandidate() {
 			}
 
 		case role := <-stateTrans:
+			// unexpected results during requesting votes,
+			// forcing candidate to change role.
+			// normally just change to FOLLOWER.
+
 			switch role {
 			case FOLLOWER:
 				go s.asFollower()
-			case CANDIDATE:
-				go s.asCandidate()
-			case LEADER:
-				go s.asLeader()
+				return
 			}
-			// NOTE: no matter what role it would be, it would returs.
-			// (actually only FOLLOWER)
-			return
 
 		case <-electionTimeout:
 			go s.asCandidate() // start another round of election
 			return
 
-		/* other raft endpoint calls */
-
 		case req := <-s.appendEntriesCalls:
-			// whenever receiving appendEntries calls, returns to FOLLOWER role
-			// (handle this request as a follower, don't waste it)
+			if req.Term < s.currentTerm {
+				// "no matter who you are, you are out-of-date."
+				// ignore it and continue the election
+				break
+			}
+
+			// handle this request and return to FOLLOWER
 			go s.handleAppendEntriesCallAsFollower(req)
 			go s.asFollower()
 			return
 
 		case req := <-s.requestVoteCalls:
+			// NOTE: the paper doesn't talk about this case.
+
 			// whenever receiving other candidates' vote requests:
 			// => trans to FOLLOWER if req.Term is bigger;
 			// => others, ignore & carry on (no return)
-
 			if req.Term > s.currentTerm {
 				go s.asFollower()
 				return
 			}
-
-			// candidate don't handle external command calls
 		}
 	}
 }
@@ -91,14 +90,14 @@ func (s *Server) requestVotes(ctx context.Context, others []string) (<-chan stri
 	stateTrans := make(chan Role, 1)
 
 	for _, addr := range s.others.Snapshot() {
-		go s.requestVoteFrom(ctx, validVotes, stateTrans, addr)
+		go s.requestVote(ctx, validVotes, stateTrans, addr)
 	}
 	return validVotes, stateTrans
 }
 
 // start a goroutine to call one node's RequestVote and track.
 // if success, push addr into the valid votes channel.
-func (s *Server) requestVoteFrom(ctx context.Context, validVotes chan<- string, stateTrans chan<- Role, addr string) {
+func (s *Server) requestVote(ctx context.Context, validVotes chan<- string, stateTrans chan<- Role, addr string) {
 	cc, err := grpc.Dial(addr)
 	if err != nil {
 		return

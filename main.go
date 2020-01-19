@@ -10,8 +10,9 @@ import (
 	"strings"
 	"syscall"
 
-	pb "github.com/straightdave/raft/pb"
-	grpc "google.golang.org/grpc"
+	"google.golang.org/grpc"
+
+	"github.com/straightdave/raft/pb"
 )
 
 var (

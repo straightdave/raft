@@ -3,7 +3,12 @@ package main
 import (
 	"sync/atomic"
 
-	pb "github.com/straightdave/raft/pb"
+	"github.com/straightdave/raft/pb"
+)
+
+const (
+	// CHSIZE default event channel size
+	CHSIZE = 10
 )
 
 // Role ...
@@ -11,11 +16,16 @@ type Role uint
 
 // server roles ...
 const (
-	INIT Role = iota
-	FOLLOWER
+	FOLLOWER Role = iota
 	CANDIDATE
 	LEADER
 )
+
+// Log ...
+type Log struct {
+	Term     uint64
+	Commands []*pb.CommandEntry
+}
 
 // Server ...
 type Server struct {
@@ -52,12 +62,12 @@ func NewServer(others []string) *Server {
 		others: NewServerList(others),
 		exe:    &Executor{},
 
-		appendEntriesCalls: make(chan *pb.AppendEntriesRequest, 10),
-		appendEntriesResps: make(chan *pb.AppendEntriesResponse, 10),
-		requestVoteCalls:   make(chan *pb.RequestVoteRequest, 10),
-		requestVoteResps:   make(chan *pb.RequestVoteResponse, 10),
-		commandCalls:       make(chan *pb.CommandRequest, 10),
-		commandResps:       make(chan *pb.CommandResponse, 10),
+		appendEntriesCalls: make(chan *pb.AppendEntriesRequest, CHSIZE),
+		appendEntriesResps: make(chan *pb.AppendEntriesResponse, CHSIZE),
+		requestVoteCalls:   make(chan *pb.RequestVoteRequest, CHSIZE),
+		requestVoteResps:   make(chan *pb.RequestVoteResponse, CHSIZE),
+		commandCalls:       make(chan *pb.CommandRequest, CHSIZE),
+		commandResps:       make(chan *pb.CommandResponse, CHSIZE),
 	}
 
 	s.log = append(s.log, Log{}) // log index starts from 1
@@ -75,10 +85,4 @@ func (s *Server) incrCommitIndex() {
 
 func (s *Server) incrLastApplied() {
 	atomic.AddUint64(&s.lastApplied, 1)
-}
-
-// Log ...
-type Log struct {
-	Term     uint64
-	Commands []*pb.CommandEntry
 }

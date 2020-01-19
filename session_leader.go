@@ -11,8 +11,8 @@ import (
 )
 
 func (s *Server) asLeader() {
-	log.Printf("> as leader")
 	s.role = LEADER
+	log.Printf("Becomes LEADER")
 
 	for {
 		select {

@@ -8,8 +8,8 @@ import (
 )
 
 func (s *Server) asFollower() {
-	log.Printf("> as follower")
 	s.role = FOLLOWER
+	log.Printf("Becomes FOLLOWER")
 
 	timeout := randomTimeout150300()
 	for {

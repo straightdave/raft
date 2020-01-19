@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	pb "github.com/straightdave/raft/pb"
+	"github.com/straightdave/raft/pb"
 )
 
 // ServerServiceImpl handles communication, but the main
