@@ -15,15 +15,13 @@ import (
 )
 
 var (
-	fPort         = flag.Uint("port", 8801, "local port to listen")
+	fPort         = flag.Uint("port", 8765, "local port to listen (TCP)")
 	fOtherServers = flag.String("servers", "", "the initial server list separated by commas")
 )
 
-func init() {
-	flag.Parse()
-}
-
 func main() {
+	flag.Parse()
+
 	otherServers := strings.Split(*fOtherServers, ",")
 	terminated := make(chan struct{})
 
@@ -43,7 +41,7 @@ func main() {
 	pb.RegisterRaftServer(gSvr, NewServerServiceImpl(otherServers))
 
 	go func() {
-		log.Printf("Serving at :%d", *fPort)
+		log.Printf("Serving TCP connections at :%d", *fPort)
 		if err := gSvr.Serve(lis); err != nil {
 			close(terminated)
 			log.Fatal(err)
@@ -51,5 +49,5 @@ func main() {
 	}()
 
 	<-terminated
-	log.Printf("Server terminated")
+	log.Printf("Terminated")
 }

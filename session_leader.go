@@ -38,11 +38,8 @@ func (s *Server) handleCommandsAsLeader(req *pb.CommandRequest) {
 	// 1 - append to []log
 	s.log = append(s.log, Log{
 		Term: s.currentTerm,
-		Commands: []CommandEntry{
-			CommandEntry{
-				Command: req.Entry.Command,
-				Args:    req.Entry.Args,
-			},
+		Commands: []*pb.CommandEntry{
+			req.Entry,
 		},
 	})
 

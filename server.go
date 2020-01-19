@@ -6,6 +6,17 @@ import (
 	pb "github.com/straightdave/raft/pb"
 )
 
+// Role ...
+type Role uint
+
+// server roles ...
+const (
+	INIT Role = iota
+	FOLLOWER
+	CANDIDATE
+	LEADER
+)
+
 // Server ...
 type Server struct {
 	ip     string
@@ -64,4 +75,10 @@ func (s *Server) incrCommitIndex() {
 
 func (s *Server) incrLastApplied() {
 	atomic.AddUint64(&s.lastApplied, 1)
+}
+
+// Log ...
+type Log struct {
+	Term     uint64
+	Commands []*pb.CommandEntry
 }
