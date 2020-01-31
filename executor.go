@@ -11,13 +11,31 @@ var (
 	ErrNotSupported = errors.New("not supported")
 )
 
+// LogEntry ...
+type LogEntry struct {
+	Term    uint64
+	Command string
+	Args    []string
+}
+
 // Executor handles real command execution, working as the
 // so called 'replicated state machine' in each node describbed in Raft.
 type Executor struct {
 }
 
-// Apply ...
-func (e *Executor) Apply(entries ...*pb.CommandEntry) (string, error) {
+func (e *Executor) cmd2logs(term uint64, entry *pb.CommandEntry) []LogEntry {
+	// currently cmd:log = 1:1
+	// sooner it will support cmd:log = 1:
+	l := Log{
+		Term:    term,
+		Command: entry.Command,
+	}
+	copy(l.Args, entry.Args)
+	return []Log{l}
+}
+
+// Apply logs
+func (e *Executor) Apply(entries ...LogEntry) (string, error) {
 
 	return "", nil
 }

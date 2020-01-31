@@ -39,7 +39,7 @@ func main() {
 	}
 
 	gSvr := grpc.NewServer()
-	pb.RegisterRaftServer(gSvr, NewServerServiceImpl(otherServers))
+	pb.RegisterRaftServer(gSvr, NewServerServiceImpl(*fPort, otherServers))
 
 	go func() {
 		log.Printf("Serving TCP connections at :%d", *fPort)

@@ -10,40 +10,39 @@ import (
 )
 
 func (s *Server) asCandidate() {
-	ctx := context.Background()
-	cctx, cancelFunc := context.WithCancel(ctx)
+	s.sessionLock.Lock()
+	defer s.sessionLock.Unlock()
+
+	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
 	var (
-		voteNum = 1 // start with 1 vote from oneself
-		others  = s.others.Snapshot()
+		voteCount       = 1
+		quotum          = len(s.peers) / 2
+		validVotesCh    = make(chan string, len(s.peers))
+		stateTransCh    = make(chan Role, len(s.peers))
+		electionTimeout = randomTimeout150300()
 	)
 
 	s.role = CANDIDATE
-	s.incrTerm()
-	s.votedFor = s.ip // vote for self
+	s.currentTerm++
+	s.votedFor = s.selfID // vote for self
+	log.Printf("%s becomes CANDIDATE {term=%d}", s.selfID, s.currentTerm)
 
-	log.Printf("Becomes CANDIDIATE {%d}", s.currentTerm)
+	s.requestVotes(ctx, validVotesCh, stateTransCh)
 
-	validVotes, stateTrans := s.requestVotes(cctx, others)
+	// through the life time as candidate:
+	// this for-select loop doesn't deal with requests from outside.
 	for {
-		// create/reset the election timeout for a new election.
-		// TODO: make election timeout configurable
-		electionTimeout := randomTimeout150300()
-
 		select {
-		case <-validVotes:
-			voteNum++
-			if voteNum > len(others)/2 { // majority
+		case <-validVotesCh:
+			voteCount++
+			if voteCount > quotum {
 				go s.asLeader()
 				return
 			}
 
-		case role := <-stateTrans:
-			// unexpected results during requesting votes,
-			// forcing candidate to change role.
-			// normally just change to FOLLOWER.
-
+		case role := <-stateTransCh:
 			switch role {
 			case FOLLOWER:
 				go s.asFollower()
@@ -51,76 +50,46 @@ func (s *Server) asCandidate() {
 			}
 
 		case <-electionTimeout:
-			go s.asCandidate() // start another round of election
+			go s.asCandidate()
 			return
-
-		case req := <-s.appendEntriesCalls:
-			if req.Term < s.currentTerm {
-				// "no matter who you are, you are out-of-date."
-				// ignore it and continue the election
-				break
-			}
-
-			// handle this request and return to FOLLOWER
-			go s.handleAppendEntriesCallAsFollower(req)
-			go s.asFollower()
-			return
-
-		case req := <-s.requestVoteCalls:
-			// NOTE: the paper doesn't talk about this case.
-
-			// whenever receiving other candidates' vote requests:
-			// => trans to FOLLOWER if req.Term is bigger;
-			// => others, ignore & carry on (no return)
-			if req.Term > s.currentTerm {
-				go s.asFollower()
-				return
-			}
 		}
 	}
 }
 
-// candidate requests votes and starts one goroutine for each node to track responses.
-// this is only called by node in the state of candidate.
-// one return value is the 'valid votes', value is the addr of the responder;
-// another return value is the 'state trans' indicater.
-func (s *Server) requestVotes(ctx context.Context, others []string) (<-chan string, <-chan Role) {
-	// initialize two indicator channels whenever begins to request votes
-	validVotes := make(chan string, len(others))
-	stateTrans := make(chan Role, 1)
-
-	for _, addr := range s.others.Snapshot() {
-		go s.requestVote(ctx, validVotes, stateTrans, addr)
+func (s *Server) requestVotes(ctx context.Context, validVotesCh chan<- string, stateTransCh chan<- Role) {
+	for _, addr := range s.peers {
+		go s.requestVote(ctx, addr, validVotesCh, stateTransCh)
 	}
-	return validVotes, stateTrans
 }
 
-// start a goroutine to call one node's RequestVote and track.
-// if success, push addr into the valid votes channel.
-func (s *Server) requestVote(ctx context.Context, validVotes chan<- string, stateTrans chan<- Role, addr string) {
+func (s *Server) requestVote(ctx context.Context, addr string, validVotesCh chan<- string, stateTransCh chan<- Role) {
+	defer rescue(func(err error) {
+		log.Printf("rescue: [%s] RPC RequestVote: %v", addr, err)
+	})
+
 	cc, err := grpc.Dial(addr)
 	if err != nil {
+		log.Printf("error: [%s] dialing failed: %v", addr, err)
 		return
 	}
 	defer cc.Close()
 
 	c := pb.NewRaftClient(cc)
 	resp, err := c.RequestVote(ctx, &pb.RequestVoteRequest{
-		Term:        s.currentTerm, // sender's current term
-		CandidateId: s.ip,          // sender's ID (using IP here)
+		Term:        s.currentTerm,
+		CandidateId: s.selfID,
 	})
 	if err != nil {
+		log.Printf("error: [%s] RPC RequestVote failed: %v", addr, err)
 		return
 	}
 
 	if resp.Term > s.currentTerm {
-		// whenever it gets a response with a bigger term, it should
-		// return to the FOLLOWER role.
-		stateTrans <- FOLLOWER
+		stateTransCh <- FOLLOWER
 		return
 	}
 
 	if resp.VoteGranted {
-		validVotes <- addr
+		validVotesCh <- addr
 	}
 }

@@ -9,10 +9,6 @@ service Raft {
     rpc Command (CommandRequest) returns (CommandResponse);
 }
 
-message CommandEntry {
-    string command = 1;
-    repeated string args = 2;
-}
 
 message RequestVoteRequest {
     uint64 term = 1;
@@ -40,10 +36,17 @@ message AppendEntriesResponse {
     bool success = 2;
 }
 
+message CommandEntry {
+    string command = 1;
+    repeated string args = 2;
+}
+
 message CommandRequest {
-    CommandEntry entry = 1;
+    string cid = 1;
+    CommandEntry entry = 11;
 }
 
 message CommandResponse {
-    string result = 1;
+    string cid = 1;
+    string result = 11;
 }

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"net"
 	"time"
+
+	"github.com/satori/go.uuid"
 )
 
 func randomTimeout150300() <-chan time.Time {
@@ -18,4 +21,23 @@ func getLocalIP() (string, error) {
 	defer conn.Close()
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 	return localAddr.IP.String(), nil
+}
+
+type actWithErr func(error)
+
+func rescue(acts ...actWithErr) {
+	if r := recover(); r != nil {
+		e := r.(error)
+		for _, act := range acts {
+			act(e)
+		}
+	}
+}
+
+func getUUID() string {
+	u, err := uuid.NewV4()
+	if err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano)
+	}
+	return u.String()
 }
