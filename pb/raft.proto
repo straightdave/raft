@@ -11,29 +11,37 @@ service Raft {
 
 
 message RequestVoteRequest {
-    uint64 term = 1;
-    string candidate_id = 2;
-    uint64 last_log_index = 3;
-    uint64 last_log_term = 4;
+    string rid = 1;
+
+    uint64 term = 11;
+    string candidate_id = 12;
+    uint64 last_log_index = 13;
+    uint64 last_log_term = 14;
 }
 
 message RequestVoteResponse {
-    uint64 term = 1;
-    bool vote_granted = 2;
+    string rid = 1;
+
+    uint64 term = 11;
+    bool vote_granted = 12;
 }
 
 message AppendEntriesRequest {
-    uint64 term = 1;
-    string leader_id = 2;
-    uint64 prev_log_index = 3;
-    uint64 prev_log_term = 4;
-    repeated CommandEntry entries = 5; // possibly send multiple entries in a batch
-    uint64 leader_commit = 6;
+    string rid = 1;
+
+    uint64 term = 11;
+    string leader_id = 12;
+    uint64 prev_log_index = 13;
+    uint64 prev_log_term = 14;
+    repeated CommandEntry entries = 15; // possibly send multiple entries in a batch
+    uint64 leader_commit = 16;
 }
 
 message AppendEntriesResponse {
-    uint64 term = 1;
-    bool success = 2;
+    string rid = 1;
+
+    uint64 term = 11;
+    bool success = 12;
 }
 
 message CommandEntry {

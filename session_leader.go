@@ -34,7 +34,7 @@ func (s *Server) asLeader() {
 	// since during session transforming, no serving, no reading.
 	s.role = LEADER
 	s.resetIndices()
-	log.Printf("%s becomes LEADER {term=%d}", s.ip, s.currentTerm)
+	log.Printf("%s becomes LEADER {term=%d}", s.selfID, s.currentTerm)
 
 	// send the init heartbeat, then wait for the result.
 	if !s.heartbeat(ctx) {

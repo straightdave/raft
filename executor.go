@@ -26,12 +26,12 @@ type Executor struct {
 func (e *Executor) cmd2logs(term uint64, entry *pb.CommandEntry) []LogEntry {
 	// currently cmd:log = 1:1
 	// sooner it will support cmd:log = 1:
-	l := Log{
+	l := LogEntry{
 		Term:    term,
 		Command: entry.Command,
 	}
 	copy(l.Args, entry.Args)
-	return []Log{l}
+	return []LogEntry{l}
 }
 
 // Apply logs

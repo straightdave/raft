@@ -26,10 +26,6 @@ func (s *Server) asFollower() {
 			defer func() { go s.asCandidate() }()
 			return
 
-		case <-s.leaderHB:
-			// just receives leader heartbeat signal,
-			// so begins next round of looping.
-			break
 		}
 	}
 }
