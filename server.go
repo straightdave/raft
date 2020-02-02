@@ -4,8 +4,13 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/straightdave/raft/pb"
+	proto "github.com/golang/protobuf/proto"
 )
+
+type protoEvent struct {
+	req    proto.Message
+	respCh chan proto.Message
+}
 
 // Server ...
 type Server struct {
@@ -29,12 +34,7 @@ type Server struct {
 	nextIndex  map[string]uint64
 	matchIndex map[string]uint64
 
-	// Command requests from clients.
-	chCommandReq chan *pb.CommandRequest
-
-	// collects Command responses for clients.
-	chCommandRespMap  map[string]chan *pb.CommandResponse
-	chCommandRespLock sync.Mutex
+	events chan *protoEvent
 }
 
 // NewServer ...
@@ -52,8 +52,7 @@ func NewServer(port uint, peers []string) *Server {
 		nextIndex:  make(map[string]uint64),
 		matchIndex: make(map[string]uint64),
 
-		chCommandReq:     make(chan *pb.CommandRequest, 50),
-		chCommandRespMap: make(map[string]chan *pb.CommandResponse),
+		events: make(chan *protoEvent, 50),
 	}
 
 	s.logs = append(s.logs, LogEntry{}) // log index starts from 1

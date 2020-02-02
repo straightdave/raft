@@ -11,8 +11,6 @@ service Raft {
 
 
 message RequestVoteRequest {
-    string rid = 1;
-
     uint64 term = 11;
     string candidate_id = 12;
     uint64 last_log_index = 13;
@@ -20,15 +18,11 @@ message RequestVoteRequest {
 }
 
 message RequestVoteResponse {
-    string rid = 1;
-
     uint64 term = 11;
     bool vote_granted = 12;
 }
 
 message AppendEntriesRequest {
-    string rid = 1;
-
     uint64 term = 11;
     string leader_id = 12;
     uint64 prev_log_index = 13;
@@ -38,8 +32,6 @@ message AppendEntriesRequest {
 }
 
 message AppendEntriesResponse {
-    string rid = 1;
-
     uint64 term = 11;
     bool success = 12;
 }
