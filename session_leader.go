@@ -31,7 +31,7 @@ func (s *Server) asLeader() {
 	// role is only updated when trans-session.
 	// role is read-only in other cases which is safe,
 	// since during session transforming, no serving, no reading.
-	s.role = LEADER
+	s.role = leader
 	s.resetIndices()
 	log.Printf("%s becomes LEADER {term=%d}", s.selfID, s.currentTerm)
 

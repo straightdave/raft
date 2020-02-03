@@ -11,7 +11,7 @@ func (s *Server) asFollower() {
 	s.sessionLock.Lock()
 	defer s.sessionLock.Unlock()
 
-	s.role = FOLLOWER
+	s.role = follower
 	log.Printf("Becomes FOLLOWER")
 
 	for {

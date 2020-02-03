@@ -7,14 +7,12 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-// Role ...
-type Role uint
+type role uint
 
-// server roles ...
 const (
-	FOLLOWER Role = iota
-	CANDIDATE
-	LEADER
+	follower role = iota
+	candidate
+	leader
 )
 
 type protoEvent struct {
@@ -31,7 +29,7 @@ type Server struct {
 	selfID string // ip + port
 	peers  []string
 
-	role     Role
+	role     role
 	votedFor string
 	leader   string
 	logs     []LogEntry

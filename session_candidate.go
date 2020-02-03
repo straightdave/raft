@@ -20,11 +20,11 @@ func (s *Server) asCandidate() {
 		voteCount       = 1
 		quotum          = len(s.peers) / 2
 		validVotesCh    = make(chan string, len(s.peers))
-		stateTransCh    = make(chan Role, len(s.peers))
+		stateTransCh    = make(chan role, len(s.peers))
 		electionTimeout = randomTimeout150300()
 	)
 
-	s.role = CANDIDATE
+	s.role = candidate
 	s.currentTerm++
 	s.votedFor = s.selfID // vote for self
 	log.Printf("%s becomes CANDIDATE {term=%d}", s.selfID, s.currentTerm)
@@ -44,7 +44,7 @@ func (s *Server) asCandidate() {
 
 		case role := <-stateTransCh:
 			switch role {
-			case FOLLOWER:
+			case follower:
 				go s.asFollower()
 				return
 			}
@@ -56,13 +56,13 @@ func (s *Server) asCandidate() {
 	}
 }
 
-func (s *Server) requestVotes(ctx context.Context, validVotesCh chan<- string, stateTransCh chan<- Role) {
+func (s *Server) requestVotes(ctx context.Context, validVotesCh chan<- string, stateTransCh chan<- role) {
 	for _, addr := range s.peers {
 		go s.requestVote(ctx, addr, validVotesCh, stateTransCh)
 	}
 }
 
-func (s *Server) requestVote(ctx context.Context, addr string, validVotesCh chan<- string, stateTransCh chan<- Role) {
+func (s *Server) requestVote(ctx context.Context, addr string, validVotesCh chan<- string, stateTransCh chan<- role) {
 	defer rescue(func(err error) {
 		log.Printf("rescue: [%s] RPC RequestVote: %v", addr, err)
 	})
@@ -85,7 +85,7 @@ func (s *Server) requestVote(ctx context.Context, addr string, validVotesCh chan
 	}
 
 	if resp.Term > s.currentTerm {
-		stateTransCh <- FOLLOWER
+		stateTransCh <- follower
 		return
 	}
 

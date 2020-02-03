@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
+
 	"github.com/straightdave/raft/pb"
 )
 
