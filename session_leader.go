@@ -65,9 +65,9 @@ func (s *Server) asLeader() {
 }
 
 func (s *Server) resetIndices() {
-	lastLogIndex := len(s.logs) - 1
+	lastLogIndex := uint64(len(s.logs) - 1)
 	for _, peer := range s.peers {
-		s.nextIndex[peer] = uint64(lastLogIndex)
+		s.nextIndex[peer] = lastLogIndex
 		s.matchIndex[peer] = 0
 	}
 }
