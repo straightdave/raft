@@ -1,31 +1,63 @@
 package main
 
 import (
+	"fmt"
 	"log"
+
+	"github.com/straightdave/raft/pb"
 )
 
 func (s *Server) asFollower() {
-	// mutex here: different sessions are mutually exclusive.
-	// each session should have mutex with full-function scope
-	// as the critical section.
 	s.sessionLock.Lock()
 	defer s.sessionLock.Unlock()
 
-	s.propertyLock.Lock()
 	s.role = FOLLOWER
-	s.propertyLock.Unlock()
 	log.Printf("Becomes FOLLOWER")
 
 	for {
-		// reset on each round of looping
 		timeout := randomTimeout150300()
 
 		select {
 		case <-timeout:
-			// exit FOLLOWER session and start CANDIDIATE session
-			defer func() { go s.asCandidate() }()
+			go s.asCandidate()
 			return
 
+		case e := <-s.events:
+			switch reqData := e.req.(type) {
+			case *pb.AppendEntriesRequest:
+				// TODO: implement
+				// the most important logic
+
+			case *pb.RequestVoteRequest:
+				if reqData.Term < s.currentTerm {
+					e.respCh <- &pb.RequestVoteResponse{
+						Term:        s.currentTerm,
+						VoteGranted: false,
+					}
+					break
+				}
+
+				if s.votedFor == "" || s.votedFor == reqData.CandidateId {
+					if reqData.LastLogIndex >= uint64(len(s.logs)-1) {
+						e.respCh <- &pb.RequestVoteResponse{
+							Term:        s.currentTerm,
+							VoteGranted: true,
+						}
+						break
+					}
+				}
+
+				e.respCh <- &pb.RequestVoteResponse{
+					Term:        s.currentTerm,
+					VoteGranted: false,
+				}
+
+			case *pb.CommandRequest:
+				e.respCh <- &pb.CommandResponse{
+					Cid:    reqData.Cid,
+					Result: fmt.Sprintf("redirect %s", s.leader),
+				}
+			}
 		}
 	}
 }

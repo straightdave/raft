@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"math/rand"
 	"net"
 	"time"
-
-	"github.com/satori/go.uuid"
 )
 
 func randomTimeout150300() <-chan time.Time {
@@ -32,12 +29,4 @@ func rescue(acts ...actWithErr) {
 			act(e)
 		}
 	}
-}
-
-func getUUID() string {
-	u, err := uuid.NewV4()
-	if err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano)
-	}
-	return u.String()
 }

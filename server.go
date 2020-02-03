@@ -4,7 +4,17 @@ import (
 	"fmt"
 	"sync"
 
-	proto "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
+)
+
+// Role ...
+type Role uint
+
+// server roles ...
+const (
+	FOLLOWER Role = iota
+	CANDIDATE
+	LEADER
 )
 
 type protoEvent struct {
@@ -14,8 +24,7 @@ type protoEvent struct {
 
 // Server ...
 type Server struct {
-	sessionLock  sync.Mutex
-	propertyLock sync.RWMutex
+	sessionLock sync.Mutex
 
 	exe *Executor
 
