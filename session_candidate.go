@@ -31,8 +31,6 @@ func (s *Server) asCandidate() {
 
 	s.requestVotes(ctx, validVotesCh, stateTransCh)
 
-	// through the life time as candidate:
-	// this for-select loop doesn't deal with requests from outside.
 	for {
 		select {
 		case <-validVotesCh:
@@ -74,10 +72,13 @@ func (s *Server) requestVote(ctx context.Context, addr string, validVotesCh chan
 	}
 	defer cc.Close()
 
+	lastIndex := uint64(len(s.logs) - 1)
 	c := pb.NewRaftClient(cc)
 	resp, err := c.RequestVote(ctx, &pb.RequestVoteRequest{
-		Term:        s.currentTerm,
-		CandidateId: s.selfID,
+		Term:         s.currentTerm,
+		CandidateId:  s.selfID,
+		LastLogIndex: lastIndex,
+		LastLogTerm:  s.logs[lastIndex].Term,
 	})
 	if err != nil {
 		log.Printf("error: [%s] RPC RequestVote failed: %v", addr, err)

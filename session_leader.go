@@ -50,12 +50,14 @@ func (s *Server) asLeader() {
 
 			case *pb.RequestVoteRequest:
 				if reqData.Term > s.currentTerm {
+					s.currentTerm = reqData.Term
 					go s.asFollower()
 					return
 				}
 
 			case *pb.AppendEntriesRequest:
 				if reqData.Term > s.currentTerm {
+					s.currentTerm = reqData.Term
 					go s.asFollower()
 					return
 				}
