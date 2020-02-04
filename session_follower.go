@@ -23,10 +23,10 @@ func (s *Server) asFollower() {
 			return
 
 		case e := <-s.events:
-			switch reqData := e.req.(type) {
+			switch req := e.req.(type) {
 			case *pb.AppendEntriesRequest:
 
-				if reqData.Term < s.currentTerm {
+				if req.Term < s.currentTerm {
 					e.respCh <- &pb.AppendEntriesResponse{
 						Term:    s.currentTerm,
 						Success: false,
@@ -35,14 +35,16 @@ func (s *Server) asFollower() {
 				}
 
 				// apply last logs
-				if reqData.LeaderCommit > s.lastApplied {
-					s.exe.Apply(s.logs[s.lastApplied])
-					s.lastApplied++
+				if req.LeaderCommit > s.lastApplied {
+					_, err := s.exe.Apply(s.logs[s.lastApplied])
+					if err == nil {
+						s.lastApplied++
+					}
 				}
 
 				// append new logs
-				for _, cmd := range reqData.Entries {
-					logs := s.exe.cmd2logs(reqData.Term, cmd)
+				for _, cmd := range req.Entries {
+					logs := s.exe.cmd2logs(req.Term, cmd)
 					s.logs = append(s.logs, logs...)
 				}
 
@@ -52,7 +54,7 @@ func (s *Server) asFollower() {
 				}
 
 			case *pb.RequestVoteRequest:
-				if reqData.Term < s.currentTerm {
+				if req.Term < s.currentTerm {
 					e.respCh <- &pb.RequestVoteResponse{
 						Term:        s.currentTerm,
 						VoteGranted: false,
@@ -60,10 +62,10 @@ func (s *Server) asFollower() {
 					break
 				}
 
-				if s.votedFor == "" || s.votedFor == reqData.CandidateId {
-					if reqData.LastLogIndex >= uint64(len(s.logs)-1) {
-						s.votedFor = reqData.CandidateId
-						s.leader = reqData.CandidateId
+				if s.votedFor == "" || s.votedFor == req.CandidateId {
+					if req.LastLogIndex >= uint64(len(s.logs)-1) {
+						s.votedFor = req.CandidateId
+						s.leader = req.CandidateId
 						e.respCh <- &pb.RequestVoteResponse{
 							Term:        s.currentTerm,
 							VoteGranted: true,
@@ -79,7 +81,7 @@ func (s *Server) asFollower() {
 
 			case *pb.CommandRequest:
 				e.respCh <- &pb.CommandResponse{
-					Cid:    reqData.Cid,
+					Cid:    req.Cid,
 					Result: fmt.Sprintf("redirect %s", s.leader),
 				}
 			}
