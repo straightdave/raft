@@ -25,7 +25,6 @@ func (s *Server) asFollower() {
 		case e := <-s.events:
 			switch req := e.req.(type) {
 			case *pb.AppendEntriesRequest:
-
 				if req.Term < s.currentTerm {
 					e.respCh <- &pb.AppendEntriesResponse{
 						Term:    s.currentTerm,
@@ -40,6 +39,11 @@ func (s *Server) asFollower() {
 					if err == nil {
 						s.lastApplied++
 					}
+				}
+
+				if len(req.Entries) == 0 {
+					// heartbeat
+					break
 				}
 
 				// append new logs

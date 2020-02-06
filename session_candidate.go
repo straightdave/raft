@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"google.golang.org/grpc"
@@ -33,6 +34,33 @@ func (s *Server) asCandidate() {
 
 	for {
 		select {
+		case e := <-s.events:
+			switch req := e.req.(type) {
+			case *pb.RequestVoteRequest:
+				e.respCh <- &pb.RequestVoteResponse{
+					Term:        s.currentTerm,
+					VoteGranted: false,
+				}
+
+			case *pb.AppendEntriesRequest:
+				e.respCh <- &pb.AppendEntriesResponse{
+					Term:    s.currentTerm,
+					Success: false,
+				}
+
+				if req.Term > s.currentTerm {
+					s.currentTerm = req.Term
+					go s.asFollower()
+					return
+				}
+
+			case *pb.CommandRequest:
+				e.respCh <- &pb.CommandResponse{
+					Cid:    req.Cid,
+					Result: fmt.Sprintf("redirect %s", s.leader),
+				}
+			}
+
 		case <-validVotesCh:
 			voteCount++
 			if voteCount > quotum {

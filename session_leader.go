@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
-	// "google.golang.org/grpc"
+	"google.golang.org/grpc"
 
 	"github.com/straightdave/raft/pb"
 )
@@ -17,8 +16,6 @@ const (
 )
 
 func (s *Server) asLeader() {
-	singleNode := len(s.peers) == 0
-
 	// the session lock makes sure that new session must start after
 	// the previous session ends.
 	s.sessionLock.Lock()
@@ -41,55 +38,43 @@ func (s *Server) asLeader() {
 	heartbeatTicker := time.NewTicker(heartbeatInterval)
 	defer heartbeatTicker.Stop()
 
+	var (
+		// signal with term for the leader to fallback as follower;
+		fallBackCh = make(chan uint64, len(s.peers))
+	)
+
 	for {
 		select {
+		case term := <-fallBackCh:
+			s.currentTerm = term
+			go s.asFollower()
+			return
+
 		case <-heartbeatTicker.C:
-			if !singleNode {
-				// DO heartbeat
-			}
+			go s.callPeers(ctx, nil, fallBackCh)
 
 		case e := <-s.events:
-
 			switch req := e.req.(type) {
 			case *pb.CommandRequest:
-
 				logs := s.exe.cmd2logs(s.currentTerm, req.Entry)
 				s.logs = append(s.logs, logs...)
 
-				lastIndex := uint64(len(s.logs) - 1)
-
-				if singleNode {
-					s.commitIndex = lastIndex
-					res, err := s.exe.Apply(logs...)
-					if err != nil {
-						e.respCh <- &pb.CommandResponse{
-							Cid:    req.Cid,
-							Result: fmt.Sprintf("err %v", err),
-						}
-					} else {
-						s.lastApplied = lastIndex
-						e.respCh <- &pb.CommandResponse{
-							Cid:    req.Cid,
-							Result: res,
-						}
-					}
-					break
-				}
-
-				//  TODO: Non-single node
+				//
+				//
+				//
+				//
+				//
+				//
+				//
 
 			case *pb.RequestVoteRequest:
 				if req.Term > s.currentTerm {
-					s.currentTerm = req.Term
-					go s.asFollower()
-					return
+					fallBackCh <- req.Term
 				}
 
 			case *pb.AppendEntriesRequest:
 				if req.Term > s.currentTerm {
-					s.currentTerm = req.Term
-					go s.asFollower()
-					return
+					fallBackCh <- req.Term
 				}
 			}
 		}
@@ -102,4 +87,79 @@ func (s *Server) resetIndices() {
 		s.nextIndex[peer] = lastLogIndex
 		s.matchIndex[peer] = 0
 	}
+}
+
+func (s *Server) callPeers(ctx context.Context, entries []*pb.CommandEntry, needFallback chan<- uint64) {
+	var (
+		responses = make(chan *pb.AppendEntriesResponse, len(s.peers))
+		quorum    = len(s.peers) / 2
+		count     = 0
+	)
+
+	// sending the requests to each peer forever until it's success,
+	// or the leader session ends from outside (ctx is done).
+	for _, addr := range s.peers {
+		go func(ctx context.Context, addr string) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+
+				resp, err := s.appendEntries(addr, entries)
+				if err == nil {
+					responses <- resp
+					return
+				}
+
+				log.Printf("[append-entries] err: %v", err)
+				time.Sleep(retryInterval)
+			}
+		}(ctx, addr)
+	}
+
+	// blocks here.
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case resp := <-responses:
+			if resp.Success {
+				count++
+				if count > quorum {
+
+					return
+				}
+			}
+		}
+	}
+}
+
+func (s *Server) appendEntries(addr string, entries []*pb.CommandEntry) (resp *pb.AppendEntriesResponse, err error) {
+	defer rescue(func(e error) {
+		err = e
+	})
+
+	var (
+		lastIndex = uint64(len(s.logs) - 1)
+		cc        *grpc.ClientConn
+		ctx       = context.Background()
+	)
+
+	cc, err = grpc.Dial(addr)
+	if err != nil {
+		return
+	}
+	defer cc.Close()
+
+	c := pb.NewRaftClient(cc)
+	return c.AppendEntries(ctx, &pb.AppendEntriesRequest{
+		Term:         s.currentTerm,
+		LeaderId:     s.selfID,
+		PrevLogIndex: lastIndex,
+		PrevLogTerm:  s.logs[lastIndex].Term,
+		Entries:      entries,
+		LeaderCommit: s.commitIndex,
+	})
 }
