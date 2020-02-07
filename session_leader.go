@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -38,10 +39,8 @@ func (s *Server) asLeader() {
 	heartbeatTicker := time.NewTicker(heartbeatInterval)
 	defer heartbeatTicker.Stop()
 
-	var (
-		// signal with term for the leader to fallback as follower;
-		fallBackCh = make(chan uint64, len(s.peers))
-	)
+	// signal with term for the leader to fallback as follower;
+	fallBackCh := make(chan uint64, len(s.peers))
 
 	for {
 		select {
@@ -54,27 +53,44 @@ func (s *Server) asLeader() {
 			go s.callPeers(ctx, nil, fallBackCh)
 
 		case e := <-s.events:
+			// request handler is SEQUENTIAL
+
 			switch req := e.req.(type) {
 			case *pb.CommandRequest:
 				logs := s.exe.cmd2logs(s.currentTerm, req.Entry)
 				s.logs = append(s.logs, logs...)
-
-				//
-				//
-				//
-				//
-				//
-				//
-				//
+				go s.callPeers(ctx, []*pb.CommandEntry{req.Entry}, fallBackCh)
+				e.respCh <- &pb.CommandResponse{
+					Cid:    req.Cid,
+					Result: fmt.Sprintf("%d", len(logs)),
+				}
 
 			case *pb.RequestVoteRequest:
 				if req.Term > s.currentTerm {
+					e.respCh <- &pb.RequestVoteResponse{
+						Term:        s.currentTerm,
+						VoteGranted: true,
+					}
 					fallBackCh <- req.Term
+				} else {
+					e.respCh <- &pb.RequestVoteResponse{
+						Term:        s.currentTerm,
+						VoteGranted: false,
+					}
 				}
 
 			case *pb.AppendEntriesRequest:
 				if req.Term > s.currentTerm {
+					e.respCh <- &pb.AppendEntriesResponse{
+						Term:    s.currentTerm,
+						Success: false, // CAUTION
+					}
 					fallBackCh <- req.Term
+				} else {
+					e.respCh <- &pb.RequestVoteResponse{
+						Term:        s.currentTerm,
+						VoteGranted: false,
+					}
 				}
 			}
 		}
@@ -128,6 +144,8 @@ func (s *Server) callPeers(ctx context.Context, entries []*pb.CommandEntry, need
 			if resp.Success {
 				count++
 				if count > quorum {
+
+					// CAUTION! to be fixed, data racing
 
 					return
 				}
