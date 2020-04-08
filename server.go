@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
+	"google.golang.org/grpc"
 )
 
 type role uint
@@ -24,7 +25,11 @@ type protoEvent struct {
 type Server struct {
 	sessionLock sync.Mutex
 
-	exe *Executor
+	// cache of grpc connections
+	connGuard       sync.RWMutex
+	grpcConnections map[string]*grpc.ClientConn
+
+	exe Executor
 
 	selfID string // ip + port
 	peers  []string
@@ -52,7 +57,8 @@ func NewServer(port uint, peers []string) *Server {
 	}
 
 	s := &Server{
-		exe: &Executor{},
+		exe:             NewExecutor(),
+		grpcConnections: make(map[string]*grpc.ClientConn),
 
 		selfID:     fmt.Sprintf("%s:%d", ip, port),
 		peers:      peers,
@@ -62,7 +68,7 @@ func NewServer(port uint, peers []string) *Server {
 		events: make(chan *protoEvent, 50),
 	}
 
-	s.logs = append(s.logs, LogEntry{}) // log index starts from 1
+	s.logs = append(s.logs, emptyLogEntry{}) // log index starts from 1
 	go s.asFollower()
 	return s
 }

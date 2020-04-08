@@ -35,7 +35,7 @@ func (s *Server) asFollower() {
 
 				// apply last logs
 				if req.LeaderCommit > s.lastApplied {
-					_, err := s.exe.Apply(s.logs[s.lastApplied])
+					err := s.exe.Apply(s.logs[s.lastApplied])
 					if err == nil {
 						s.lastApplied++
 					}
@@ -48,7 +48,7 @@ func (s *Server) asFollower() {
 
 				// append new logs
 				for _, cmd := range req.Entries {
-					logs := s.exe.cmd2logs(req.Term, cmd)
+					logs, _ := s.exe.ToRaftLogs(req.Term, cmd)
 					s.logs = append(s.logs, logs...)
 				}
 

@@ -106,7 +106,7 @@ func (s *Server) requestVote(ctx context.Context, addr string, validVotesCh chan
 		Term:         s.currentTerm,
 		CandidateId:  s.selfID,
 		LastLogIndex: lastIndex,
-		LastLogTerm:  s.logs[lastIndex].Term,
+		LastLogTerm:  s.logs[lastIndex].Term(),
 	})
 	if err != nil {
 		log.Printf("error: [%s] RPC RequestVote failed: %v", addr, err)
