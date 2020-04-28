@@ -1,8 +1,7 @@
-package main
+package raft
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"google.golang.org/grpc"
@@ -10,85 +9,85 @@ import (
 	"github.com/straightdave/raft/pb"
 )
 
-func (s *Server) asCandidate() {
-	s.sessionLock.Lock()
-	defer s.sessionLock.Unlock()
+func (r *Raft) asCandidate() {
+	r.sessionLock.Lock()
+	defer r.sessionLock.Unlock()
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 
 	var (
 		voteCount       = 1
-		quotum          = len(s.peers) / 2
-		validVotesCh    = make(chan string, len(s.peers))
-		stateTransCh    = make(chan role, len(s.peers))
+		quotum          = len(r.peers) / 2
+		validVotesCh    = make(chan string, len(r.peers))
+		stateTransCh    = make(chan Role, len(r.peers))
 		electionTimeout = randomTimeout150300()
 	)
 
-	s.role = candidate
-	s.currentTerm++
-	s.votedFor = s.selfID // vote for self
-	log.Printf("%s becomes CANDIDATE {term=%d}", s.selfID, s.currentTerm)
+	r.role = Candidate
+	r.currentTerm++
+	r.votedFor = r.selfID // vote for self
+	log.Printf("%s becomes CANDIDATE {term=%d}", r.selfID, r.currentTerm)
 
-	s.requestVotes(ctx, validVotesCh, stateTransCh)
+	r.requestVotes(ctx, validVotesCh, stateTransCh)
 
 	for {
 		select {
-		case e := <-s.events:
+		case e := <-r.events:
 			switch req := e.req.(type) {
 			case *pb.RequestVoteRequest:
 				e.respCh <- &pb.RequestVoteResponse{
-					Term:        s.currentTerm,
+					Term:        r.currentTerm,
 					VoteGranted: false,
 				}
 
 			case *pb.AppendEntriesRequest:
 				e.respCh <- &pb.AppendEntriesResponse{
-					Term:    s.currentTerm,
+					Term:    r.currentTerm,
 					Success: false,
 				}
 
-				if req.Term > s.currentTerm {
-					s.currentTerm = req.Term
-					go s.asFollower()
+				if req.Term > r.currentTerm {
+					r.currentTerm = req.Term
+					go r.asFollower()
 					return
 				}
 
 			case *pb.CommandRequest:
 				e.respCh <- &pb.CommandResponse{
 					Cid:    req.Cid,
-					Result: fmt.Sprintf("redirect %s", s.leader),
+					Result: r.exe.MakeRedirectionResponse(r.selfID),
 				}
 			}
 
 		case <-validVotesCh:
 			voteCount++
 			if voteCount > quotum {
-				go s.asLeader()
+				go r.asLeader()
 				return
 			}
 
 		case role := <-stateTransCh:
 			switch role {
-			case follower:
-				go s.asFollower()
+			case Follower:
+				go r.asFollower()
 				return
 			}
 
 		case <-electionTimeout:
-			go s.asCandidate()
+			go r.asLeader()
 			return
 		}
 	}
 }
 
-func (s *Server) requestVotes(ctx context.Context, validVotesCh chan<- string, stateTransCh chan<- role) {
-	for _, addr := range s.peers {
-		go s.requestVote(ctx, addr, validVotesCh, stateTransCh)
+func (r *Raft) requestVotes(ctx context.Context, validVotesCh chan<- string, stateTransCh chan<- Role) {
+	for _, addr := range r.peers {
+		go r.requestVote(ctx, addr, validVotesCh, stateTransCh)
 	}
 }
 
-func (s *Server) requestVote(ctx context.Context, addr string, validVotesCh chan<- string, stateTransCh chan<- role) {
+func (r *Raft) requestVote(ctx context.Context, addr string, validVotesCh chan<- string, stateTransCh chan<- Role) {
 	defer rescue(func(err error) {
 		log.Printf("rescue: [%s] RPC RequestVote: %v", addr, err)
 	})
@@ -100,21 +99,21 @@ func (s *Server) requestVote(ctx context.Context, addr string, validVotesCh chan
 	}
 	defer cc.Close()
 
-	lastIndex := uint64(len(s.logs) - 1)
+	lastIndex := uint64(len(r.logs) - 1)
 	c := pb.NewRaftClient(cc)
 	resp, err := c.RequestVote(ctx, &pb.RequestVoteRequest{
-		Term:         s.currentTerm,
-		CandidateId:  s.selfID,
+		Term:         r.currentTerm,
+		CandidateId:  r.selfID,
 		LastLogIndex: lastIndex,
-		LastLogTerm:  s.logs[lastIndex].Term(),
+		LastLogTerm:  r.logs[lastIndex].Term(),
 	})
 	if err != nil {
 		log.Printf("error: [%s] RPC RequestVote failed: %v", addr, err)
 		return
 	}
 
-	if resp.Term > s.currentTerm {
-		stateTransCh <- follower
+	if resp.Term > r.currentTerm {
+		stateTransCh <- Follower
 		return
 	}
 

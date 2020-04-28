@@ -411,7 +411,9 @@ func init() {
 	proto.RegisterType((*CommandResponse)(nil), "pb.CommandResponse")
 }
 
-func init() { proto.RegisterFile("raft.proto", fileDescriptor_b042552c306ae59b) }
+func init() {
+	proto.RegisterFile("raft.proto", fileDescriptor_b042552c306ae59b)
+}
 
 var fileDescriptor_b042552c306ae59b = []byte{
 	// 444 bytes of a gzipped FileDescriptorProto
@@ -447,11 +449,11 @@ var fileDescriptor_b042552c306ae59b = []byte{
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ context.Context
-var _ grpc.ClientConn
+var _ grpc.ClientConnInterface
 
 // This is a compile-time assertion to ensure that this generated file
 // is compatible with the grpc package it is being compiled against.
-const _ = grpc.SupportPackageIsVersion4
+const _ = grpc.SupportPackageIsVersion6
 
 // RaftClient is the client API for Raft service.
 //
@@ -464,10 +466,10 @@ type RaftClient interface {
 }
 
 type raftClient struct {
-	cc *grpc.ClientConn
+	cc grpc.ClientConnInterface
 }
 
-func NewRaftClient(cc *grpc.ClientConn) RaftClient {
+func NewRaftClient(cc grpc.ClientConnInterface) RaftClient {
 	return &raftClient{cc}
 }
 

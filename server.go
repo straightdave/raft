@@ -1,74 +1,90 @@
-package main
+package raft
 
 import (
+	"context"
 	"fmt"
-	"sync"
+	"time"
 
 	"github.com/golang/protobuf/proto"
-	"google.golang.org/grpc"
-)
 
-type role uint
+	"github.com/straightdave/raft/pb"
+)
 
 const (
-	follower role = iota
-	candidate
-	leader
+	respTimeout = 500 * time.Millisecond
 )
 
-type protoEvent struct {
-	req    proto.Message
-	respCh chan proto.Message
+var (
+	errContextDone = fmt.Errorf("context done")
+	errTimeout     = fmt.Errorf("time out")
+)
+
+// implementation of pb.RaftServer
+type impl struct {
+	raft *Raft
 }
 
-// Server ...
-type Server struct {
-	sessionLock sync.Mutex
-
-	// cache of grpc connections
-	connGuard       sync.RWMutex
-	grpcConnections map[string]*grpc.ClientConn
-
-	exe Executor
-
-	selfID string // ip + port
-	peers  []string
-
-	role     role
-	votedFor string
-	leader   string
-	logs     []LogEntry
-
-	currentTerm uint64
-	commitIndex uint64
-	lastApplied uint64
-
-	nextIndex  map[string]uint64
-	matchIndex map[string]uint64
-
-	events chan *protoEvent
+// NewRaftServer ...
+func NewRaftServer(port uint, opts ...Option) pb.RaftServer {
+	return &impl{raft: NewRaft(port, opts...)}
 }
 
-// NewServer ...
-func NewServer(port uint, peers []string) *Server {
-	ip, err := getLocalIP()
-	if err != nil {
-		panic(err)
+// Command ...
+func (s *impl) Command(ctx context.Context, req *pb.CommandRequest) (*pb.CommandResponse, error) {
+	ch := make(chan proto.Message, 1)
+	defer close(ch)
+
+	s.raft.events <- &protoEvent{
+		req:    req,
+		respCh: ch,
 	}
 
-	s := &Server{
-		exe:             NewExecutor(),
-		grpcConnections: make(map[string]*grpc.ClientConn),
+	select {
+	case resp := <-ch:
+		return resp.(*pb.CommandResponse), nil
+	case <-time.After(respTimeout):
+		return nil, errTimeout
+	case <-ctx.Done():
+		return nil, errContextDone
+	}
+}
 
-		selfID:     fmt.Sprintf("%s:%d", ip, port),
-		peers:      peers,
-		nextIndex:  make(map[string]uint64),
-		matchIndex: make(map[string]uint64),
+// RequestVote ...
+func (s *impl) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
+	ch := make(chan proto.Message, 1)
+	defer close(ch)
 
-		events: make(chan *protoEvent, 50),
+	s.raft.events <- &protoEvent{
+		req:    req,
+		respCh: ch,
 	}
 
-	s.logs = append(s.logs, emptyLogEntry{}) // log index starts from 1
-	go s.asFollower()
-	return s
+	select {
+	case resp := <-ch:
+		return resp.(*pb.RequestVoteResponse), nil
+	case <-time.After(respTimeout):
+		return nil, errTimeout
+	case <-ctx.Done():
+		return nil, errContextDone
+	}
+}
+
+// AppendEntries ...
+func (s *impl) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
+	ch := make(chan proto.Message, 1)
+	defer close(ch)
+
+	s.raft.events <- &protoEvent{
+		req:    req,
+		respCh: ch,
+	}
+
+	select {
+	case resp := <-ch:
+		return resp.(*pb.AppendEntriesResponse), nil
+	case <-time.After(respTimeout):
+		return nil, errTimeout
+	case <-ctx.Done():
+		return nil, errContextDone
+	}
 }

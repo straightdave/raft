@@ -12,18 +12,30 @@ import (
 
 	"google.golang.org/grpc"
 
+	"github.com/straightdave/raft"
+	"github.com/straightdave/raft/kv"
 	"github.com/straightdave/raft/pb"
 )
 
 var (
-	fPort         = flag.Uint("port", 8765, "local port to listen (TCP)")
-	fOtherServers = flag.String("servers", "", "the initial server list separated by commas")
+	fPort  = flag.Uint("raft.port", 8765, "local port to listen (TCP)")
+	fPeers = flag.String("raft.peers", "", "the initial server list separated by commas")
 )
 
 func main() {
 	flag.Parse()
 
-	otherServers := strings.Split(*fOtherServers, ",")
+	var peers []string
+	raw := strings.TrimSpace(*fPeers)
+	for _, p := range strings.Split(raw, ",") {
+		pp := strings.TrimSpace(p)
+		if pp != "" {
+			peers = append(peers, pp)
+		}
+	}
+
+	log.Printf("Starts with %d peer(s): %v\n", len(peers), peers)
+
 	terminated := make(chan struct{})
 
 	go func() {
@@ -39,7 +51,14 @@ func main() {
 	}
 
 	gSvr := grpc.NewServer()
-	pb.RegisterRaftServer(gSvr, NewServerServiceImpl(*fPort, otherServers))
+	pb.RegisterRaftServer(
+		gSvr,
+		raft.NewRaftServer(
+			*fPort,
+			raft.WithPeers(peers),
+			raft.WithExecutor(kv.NewExecutor()),
+		),
+	)
 
 	go func() {
 		log.Printf("Serving TCP connections at :%d", *fPort)

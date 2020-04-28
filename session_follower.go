@@ -1,43 +1,42 @@
-package main
+package raft
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/straightdave/raft/pb"
 )
 
-func (s *Server) asFollower() {
-	s.sessionLock.Lock()
-	defer s.sessionLock.Unlock()
+func (r *Raft) asFollower() {
+	r.sessionLock.Lock()
+	defer r.sessionLock.Unlock()
 
-	s.role = follower
-	log.Printf("%s becomes FOLLOWER", s.selfID)
+	r.role = Follower
+	log.Printf("%s becomes FOLLOWER", r.selfID)
 
 	for {
 		timeout := randomTimeout150300()
 
 		select {
 		case <-timeout:
-			go s.asCandidate()
+			go r.asCandidate()
 			return
 
-		case e := <-s.events:
+		case e := <-r.events:
 			switch req := e.req.(type) {
 			case *pb.AppendEntriesRequest:
-				if req.Term < s.currentTerm {
+				if req.Term < r.currentTerm {
 					e.respCh <- &pb.AppendEntriesResponse{
-						Term:    s.currentTerm,
+						Term:    r.currentTerm,
 						Success: false,
 					}
 					break
 				}
 
 				// apply last logs
-				if req.LeaderCommit > s.lastApplied {
-					err := s.exe.Apply(s.logs[s.lastApplied])
+				if req.LeaderCommit > r.lastApplied {
+					_, err := r.exe.Apply(r.logs[r.lastApplied])
 					if err == nil {
-						s.lastApplied++
+						r.lastApplied++
 					}
 				}
 
@@ -48,30 +47,30 @@ func (s *Server) asFollower() {
 
 				// append new logs
 				for _, cmd := range req.Entries {
-					logs, _ := s.exe.ToRaftLogs(req.Term, cmd)
-					s.logs = append(s.logs, logs...)
+					log, _ := r.exe.ToRaftLog(req.Term, cmd)
+					r.logs = append(r.logs, log)
 				}
 
 				e.respCh <- &pb.AppendEntriesResponse{
-					Term:    s.currentTerm,
+					Term:    r.currentTerm,
 					Success: true,
 				}
 
 			case *pb.RequestVoteRequest:
-				if req.Term < s.currentTerm {
+				if req.Term < r.currentTerm {
 					e.respCh <- &pb.RequestVoteResponse{
-						Term:        s.currentTerm,
+						Term:        r.currentTerm,
 						VoteGranted: false,
 					}
 					break
 				}
 
-				if s.votedFor == "" || s.votedFor == req.CandidateId {
-					if req.LastLogIndex >= uint64(len(s.logs)-1) {
-						s.votedFor = req.CandidateId
-						s.leader = req.CandidateId
+				if r.votedFor == "" || r.votedFor == req.CandidateId {
+					if req.LastLogIndex >= uint64(len(r.logs)-1) {
+						r.votedFor = req.CandidateId
+						r.leader = req.CandidateId
 						e.respCh <- &pb.RequestVoteResponse{
-							Term:        s.currentTerm,
+							Term:        r.currentTerm,
 							VoteGranted: true,
 						}
 						break
@@ -79,14 +78,14 @@ func (s *Server) asFollower() {
 				}
 
 				e.respCh <- &pb.RequestVoteResponse{
-					Term:        s.currentTerm,
+					Term:        r.currentTerm,
 					VoteGranted: false,
 				}
 
 			case *pb.CommandRequest:
 				e.respCh <- &pb.CommandResponse{
 					Cid:    req.Cid,
-					Result: fmt.Sprintf("redirect %s", s.leader),
+					Result: r.exe.MakeRedirectionResponse(r.selfID),
 				}
 			}
 		}
