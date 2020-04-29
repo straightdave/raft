@@ -3,15 +3,15 @@ Raft
 
 Coding exercise trying to implement Raft consistency algorithm.
 
-# Learning materials
+## Learning materials
 
-## 1 - [https://raft.github.io/](https://raft.github.io/)
+### 1 - [https://raft.github.io/](https://raft.github.io/)
 The Demo on the page is critical for me to understand the Raft.
 
-## 2 - [Paper](https://raft.github.io/raft.pdf)
+### 2 - [Paper](https://raft.github.io/raft.pdf)
 More detailed information.
 
-# Exercise applications
+## Exercise applications
 
 ```
 ├── cmd
@@ -21,7 +21,7 @@ More detailed information.
 │       └── main.go
 ```
 
-## Server
+### Server
 ```
 $ ./server
 2020/04/29 09:51:24 Starts with 0 peer(s): []
@@ -31,7 +31,7 @@ $ ./server
 2020/04/29 09:51:24 192.168.1.76:8765 becomes LEADER {term=1}
 ```
 
-## Client
+### Client
 ```
 $ ./client
 127.0.0.1:8765 0> set a 1
