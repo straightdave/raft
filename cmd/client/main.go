@@ -9,8 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/straightdave/raft/pb"
 	"google.golang.org/grpc"
+
+	"github.com/straightdave/raft/pb"
 )
 
 var (
