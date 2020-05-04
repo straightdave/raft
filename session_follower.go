@@ -14,16 +14,25 @@ func (r *Raft) asFollower() {
 	log.Printf("%s becomes FOLLOWER", r.selfID)
 
 	for {
-		timeout := randomTimeout150300()
+		// Timeout for a new election.
+		// Renewed at the beginning of each loop.
+		electionTimeout := randomTimeoutInMSRange(150, 300)
 
+		// Only two kinds of go-events are handled as a follower:
+		// 1. Timeout for a new election;
+		// 2. Incoming requests (both internal and external).
 		select {
-		case <-timeout:
+		case <-electionTimeout:
+			// I'm tired of waiting. I am becoming a new leader.
 			go r.asCandidate()
 			return
 
 		case e := <-r.events:
 			switch req := e.req.(type) {
 			case *pb.AppendEntriesRequest:
+
+				// Sorry your term seems out-of-date.
+				// I don't listen to an old king. Thank you. Next.
 				if req.Term < r.currentTerm {
 					e.respCh <- &pb.AppendEntriesResponse{
 						Term:    r.currentTerm,
@@ -32,16 +41,20 @@ func (r *Raft) asFollower() {
 					break
 				}
 
-				// apply last logs
+				// Oh I see you, my boss, have already committed many.
+				// I'll commit those just like you.
 				if req.LeaderCommit > r.lastApplied {
-					_, err := r.exe.Apply(r.logs[r.lastApplied])
-					if err == nil {
-						r.lastApplied++
+					for i := r.lastApplied + 1; i <= req.LeaderCommit; i++ {
+						_, err := r.exe.Apply(r.logs[i])
+						if err != nil {
+							break
+						}
+						r.lastApplied = i
 					}
 				}
 
 				if len(req.Entries) == 0 {
-					// heartbeat
+					// This is a heartbeat.
 					break
 				}
 
@@ -57,7 +70,9 @@ func (r *Raft) asFollower() {
 				}
 
 			case *pb.RequestVoteRequest:
-				if req.Term < r.currentTerm {
+				// You are old. You cannot be a leader. Even our terms are same now.
+				// ('cause your term was one less than mine before becoming a candidate)
+				if req.Term <= r.currentTerm {
 					e.respCh <- &pb.RequestVoteResponse{
 						Term:        r.currentTerm,
 						VoteGranted: false,
@@ -65,10 +80,14 @@ func (r *Raft) asFollower() {
 					break
 				}
 
+				// If:
+				// 1. I've never had a leader;
+				// 2. Actually you are my current leader;
+				// I'll consider letting you be my leader.
 				if r.votedFor == "" || r.votedFor == req.CandidateId {
-					if req.LastLogIndex >= uint64(len(r.logs)-1) {
+					// In addition your LastLogIndex must be larger than mine.
+					if req.LastLogIndex > uint64(len(r.logs)) {
 						r.votedFor = req.CandidateId
-						r.leader = req.CandidateId
 						e.respCh <- &pb.RequestVoteResponse{
 							Term:        r.currentTerm,
 							VoteGranted: true,
@@ -83,9 +102,10 @@ func (r *Raft) asFollower() {
 				}
 
 			case *pb.CommandRequest:
+				// Just tell clients who is the current leader.
 				e.respCh <- &pb.CommandResponse{
 					Cid:    req.Cid,
-					Result: r.exe.MakeRedirectionResponse(r.selfID),
+					Result: r.exe.MakeRedirectionResponse(r.votedFor),
 				}
 			}
 		}

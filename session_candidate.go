@@ -21,7 +21,7 @@ func (r *Raft) asCandidate() {
 		quotum          = len(r.peers) / 2
 		validVotesCh    = make(chan string, len(r.peers))
 		stateTransCh    = make(chan Role, len(r.peers))
-		electionTimeout = randomTimeout150300()
+		electionTimeout = randomTimeoutInMSRange(150, 300)
 	)
 
 	r.role = Candidate

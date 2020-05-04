@@ -6,8 +6,9 @@ import (
 	"time"
 )
 
-func randomTimeout150300() <-chan time.Time {
-	return time.After(time.Duration(rand.Intn(150)+150) * time.Millisecond)
+func randomTimeoutInMSRange(min, max int) <-chan time.Time {
+	delta := max - min
+	return time.After(time.Duration(rand.Intn(min)+delta) * time.Millisecond)
 }
 
 func getLocalIP() (string, error) {

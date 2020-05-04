@@ -22,7 +22,6 @@ type Raft struct {
 	peers  []string
 
 	votedFor string
-	leader   string
 	logs     []LogEntry
 
 	currentTerm uint64
