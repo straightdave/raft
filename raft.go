@@ -18,10 +18,9 @@ type Raft struct {
 	role        Role
 	exe         Executor
 
-	selfID string // ip + port
-	peers  []string
-
-	votedFor string
+	selfID   string // self address (ip:port)
+	votedFor string // leader address (ip:port)
+	peers    []string
 	logs     []LogEntry
 
 	currentTerm uint64

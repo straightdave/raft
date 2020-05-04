@@ -9,39 +9,92 @@ import (
 	"github.com/straightdave/raft/pb"
 )
 
+type fallbackCmd struct {
+	LeaderAddr string
+	Term       uint64
+}
+
 func (r *Raft) asCandidate() {
 	r.sessionLock.Lock()
 	defer r.sessionLock.Unlock()
 
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	defer cancelFunc()
+	log.Printf("%s becomes CANDIDATE {term=%d}", r.selfID, r.currentTerm)
+	r.role = Candidate
+	r.votedFor = r.selfID // vote for self
 
 	var (
 		voteCount       = 1
 		quotum          = len(r.peers) / 2
 		validVotesCh    = make(chan string, len(r.peers))
-		stateTransCh    = make(chan Role, len(r.peers))
+		fallbackCh      = make(chan fallbackCmd, len(r.peers))
 		electionTimeout = randomTimeoutInMSRange(150, 300)
 	)
 
-	r.role = Candidate
-	r.currentTerm++
-	r.votedFor = r.selfID // vote for self
-	log.Printf("%s becomes CANDIDATE {term=%d}", r.selfID, r.currentTerm)
-
-	r.requestVotes(ctx, validVotesCh, stateTransCh)
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	defer cancelFunc()
+	r.requestVotes(ctx, validVotesCh, fallbackCh)
 
 	for {
 		select {
+
+		case <-electionTimeout:
+			// Especially in single-server (no peer) mode, requests for vote won't get
+			// any response, so the case `<-validateVotesCh` won't happen. In this case,
+			// we let the single server be the leader directly.
+			if len(r.peers) == 0 {
+				go r.asLeader()
+				return
+			}
+
+			// Otherwise, it should start a new candidate session.
+			go r.asCandidate()
+			return
+
+		case <-validVotesCh:
+			// Collecting granted vote count from responses of vote requests.
+			voteCount++
+			if voteCount > quotum {
+				// WIN!
+				go r.asLeader()
+				return
+			}
+
+		case fb := <-fallbackCh:
+			// Responses of vote requests require a fallback.
+			r.currentTerm = fb.Term
+			r.votedFor = fb.LeaderAddr
+			go r.asFollower()
+			return
+
 		case e := <-r.events:
 			switch req := e.req.(type) {
 			case *pb.RequestVoteRequest:
+				// Case: receiving vote requests from other candidates.
+				// If the incoming requests are sent by candidates with higher terms,
+				// fallback as the follower of them.
+				// Else, tell them my term and continue waiting.
+
+				if req.Term > r.currentTerm {
+					r.currentTerm = req.Term
+					r.votedFor = req.CandidateId
+					go r.asFollower()
+					return
+				}
+
 				e.respCh <- &pb.RequestVoteResponse{
 					Term:        r.currentTerm,
 					VoteGranted: false,
 				}
 
 			case *pb.AppendEntriesRequest:
+				// Case: receiving append log requests from other leaders.
+				// If the incoming requests are sent by leaders with higher terms,
+				// fallback as their followers.
+				// NOTE:
+				// In this case, we just fallback as the follower without appending logs but just
+				// responding with false. So then the leader would send another append-log request.
+
+				// No matter fallback or not, respond with false.
 				e.respCh <- &pb.AppendEntriesResponse{
 					Term:    r.currentTerm,
 					Success: false,
@@ -49,45 +102,33 @@ func (r *Raft) asCandidate() {
 
 				if req.Term > r.currentTerm {
 					r.currentTerm = req.Term
+					r.votedFor = req.LeaderId
 					go r.asFollower()
 					return
 				}
 
 			case *pb.CommandRequest:
+				// Case: receiving external command requests.
+				// This case is simpler, just respond with current leader address (voteFor).
+				// NOTE: actually leader address is set as self address in the beginning of session.
+				// Client requests may get the address that is not the final leader. So client just
+				// retry and finally will get correct one.
 				e.respCh <- &pb.CommandResponse{
 					Cid:    req.Cid,
-					Result: r.exe.MakeRedirectionResponse(r.selfID),
+					Result: r.exe.MakeRedirectionResponse(r.votedFor),
 				}
 			}
-
-		case <-validVotesCh:
-			voteCount++
-			if voteCount > quotum {
-				go r.asLeader()
-				return
-			}
-
-		case role := <-stateTransCh:
-			switch role {
-			case Follower:
-				go r.asFollower()
-				return
-			}
-
-		case <-electionTimeout:
-			go r.asLeader()
-			return
 		}
 	}
 }
 
-func (r *Raft) requestVotes(ctx context.Context, validVotesCh chan<- string, stateTransCh chan<- Role) {
+func (r *Raft) requestVotes(ctx context.Context, validVotesCh chan<- string, fallbackCh chan<- fallbackCmd) {
 	for _, addr := range r.peers {
-		go r.requestVote(ctx, addr, validVotesCh, stateTransCh)
+		go r.requestVote(ctx, addr, validVotesCh, fallbackCh)
 	}
 }
 
-func (r *Raft) requestVote(ctx context.Context, addr string, validVotesCh chan<- string, stateTransCh chan<- Role) {
+func (r *Raft) requestVote(ctx context.Context, addr string, validVotesCh chan<- string, fallbackCh chan<- fallbackCmd) {
 	defer rescue(func(err error) {
 		log.Printf("rescue: [%s] RPC RequestVote: %v", addr, err)
 	})
@@ -98,9 +139,9 @@ func (r *Raft) requestVote(ctx context.Context, addr string, validVotesCh chan<-
 		return
 	}
 	defer cc.Close()
+	c := pb.NewRaftClient(cc)
 
 	lastIndex := uint64(len(r.logs) - 1)
-	c := pb.NewRaftClient(cc)
 	resp, err := c.RequestVote(ctx, &pb.RequestVoteRequest{
 		Term:         r.currentTerm,
 		CandidateId:  r.selfID,
@@ -112,8 +153,9 @@ func (r *Raft) requestVote(ctx context.Context, addr string, validVotesCh chan<-
 		return
 	}
 
+	// The response shows the target is higher than the candidate, so fallback.
 	if resp.Term > r.currentTerm {
-		stateTransCh <- Follower
+		fallbackCh <- fallbackCmd{LeaderAddr: addr, Term: resp.Term}
 		return
 	}
 

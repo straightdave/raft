@@ -24,6 +24,7 @@ func (r *Raft) asFollower() {
 		select {
 		case <-electionTimeout:
 			// I'm tired of waiting. I am becoming a new leader.
+			r.currentTerm++ // WARN: concurrent access
 			go r.asCandidate()
 			return
 
