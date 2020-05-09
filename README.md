@@ -22,13 +22,24 @@ More detailed information.
 ```
 
 ### Server
+one server:
 ```
-$ ./server
-2020/04/29 09:51:24 Starts with 0 peer(s): []
+$ ./server -raft.peers 192.168.1.76:8766
+2020/04/29 09:51:24 Starts with 1 peer(s): [192.168.1.76:8766]
 2020/04/29 09:51:24 Serving TCP connections at :8765
 2020/04/29 09:51:24 192.168.1.76:8765 becomes FOLLOWER
 2020/04/29 09:51:24 192.168.1.76:8765 becomes CANDIDATE {term=1}
-2020/04/29 09:51:24 192.168.1.76:8765 becomes LEADER {term=1}
+...
+```
+
+another server:
+```
+$ ./server -raft.port 8766 -raft.peers 192.168.1.76:8765
+2020/04/29 09:51:24 Starts with 1 peer(s): [192.168.1.76:8765]
+2020/04/29 09:51:24 Serving TCP connections at :8766
+2020/04/29 09:51:24 192.168.1.76:8765 becomes FOLLOWER
+2020/04/29 09:51:24 192.168.1.76:8765 becomes CANDIDATE {term=1}
+...
 ```
 
 ### Client
