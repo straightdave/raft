@@ -52,6 +52,6 @@ func NewRaft(port uint, opts ...Option) *Raft {
 	}
 
 	r.logs = append(r.logs, &EmptyLogEntry{}) // log index starts from 1
-	go r.asFollower()
+	go r.asFollower("init")
 	return r
 }

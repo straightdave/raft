@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"log"
+	"runtime/debug"
 
 	"google.golang.org/grpc"
 
@@ -14,11 +15,11 @@ type fallbackCmd struct {
 	Term       uint64
 }
 
-func (r *Raft) asCandidate() {
+func (r *Raft) asCandidate(reasons ...string) {
 	r.sessionLock.Lock()
 	defer r.sessionLock.Unlock()
 
-	log.Printf("%s becomes CANDIDATE {term=%d}", r.selfID, r.currentTerm)
+	log.Printf("%s becomes CANDIDATE {term=%d} due to reasons=%v", r.selfID, r.currentTerm, reasons)
 	r.role = Candidate
 	r.votedFor = r.selfID // vote for self
 
@@ -42,12 +43,12 @@ func (r *Raft) asCandidate() {
 			// any response, so the case `<-validateVotesCh` won't happen. In this case,
 			// we let the single server be the leader directly.
 			if len(r.peers) == 0 {
-				go r.asLeader()
+				go r.asLeader("single node", "election timeout")
 				return
 			}
 
 			// Otherwise, it should start a new candidate session.
-			go r.asCandidate()
+			go r.asCandidate("election timeout")
 			return
 
 		case <-validVotesCh:
@@ -55,7 +56,7 @@ func (r *Raft) asCandidate() {
 			voteCount++
 			if voteCount > quotum {
 				// WIN!
-				go r.asLeader()
+				go r.asLeader("win")
 				return
 			}
 
@@ -63,21 +64,23 @@ func (r *Raft) asCandidate() {
 			// Responses of vote requests require a fallback.
 			r.currentTerm = fb.Term
 			r.votedFor = fb.LeaderAddr
-			go r.asFollower()
+			go r.asFollower("fallback", "leader:"+fb.LeaderAddr)
 			return
 
 		case e := <-r.events:
 			switch req := e.req.(type) {
 			case *pb.RequestVoteRequest:
 				// Case: receiving vote requests from other candidates.
-				// If the incoming requests are sent by candidates with higher terms,
-				// fallback as the follower of them.
-				// Else, tell them my term and continue waiting.
-
-				if req.Term > r.currentTerm {
+				// If the incoming requests are sent by candidates with higher or same terms,
+				// it gives up candidate session and fallbacks to be FOLLOWER.
+				if req.Term >= r.currentTerm {
 					r.currentTerm = req.Term
 					r.votedFor = req.CandidateId
-					go r.asFollower()
+					e.respCh <- &pb.RequestVoteResponse{
+						Term:        r.currentTerm,
+						VoteGranted: true,
+					}
+					go r.asFollower("other candiadate wins")
 					return
 				}
 
@@ -103,7 +106,7 @@ func (r *Raft) asCandidate() {
 				if req.Term > r.currentTerm {
 					r.currentTerm = req.Term
 					r.votedFor = req.LeaderId
-					go r.asFollower()
+					go r.asFollower("valid leader requests")
 					return
 				}
 
@@ -130,10 +133,10 @@ func (r *Raft) requestVotes(ctx context.Context, validVotesCh chan<- string, fal
 
 func (r *Raft) requestVote(ctx context.Context, addr string, validVotesCh chan<- string, fallbackCh chan<- fallbackCmd) {
 	defer rescue(func(err error) {
-		log.Printf("rescue: [%s] RPC RequestVote: %v", addr, err)
+		log.Printf("rescue: [%s] RPC RequestVote: %v\nStack: %s", addr, err, debug.Stack())
 	})
 
-	cc, err := grpc.Dial(addr)
+	cc, err := grpc.Dial(addr, grpc.WithInsecure())
 	if err != nil {
 		log.Printf("error: [%s] dialing failed: %v", addr, err)
 		return

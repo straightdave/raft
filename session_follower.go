@@ -6,12 +6,12 @@ import (
 	"github.com/straightdave/raft/pb"
 )
 
-func (r *Raft) asFollower() {
+func (r *Raft) asFollower(reasons ...string) {
 	r.sessionLock.Lock()
 	defer r.sessionLock.Unlock()
 
 	r.role = Follower
-	log.Printf("%s becomes FOLLOWER", r.selfID)
+	log.Printf("%s becomes FOLLOWER due to reasons=%v", r.selfID, reasons)
 
 	for {
 		// Timeout for a new election.
@@ -25,7 +25,7 @@ func (r *Raft) asFollower() {
 		case <-electionTimeout:
 			// I'm tired of waiting. I am becoming a new leader.
 			r.currentTerm++ // WARN: concurrent access
-			go r.asCandidate()
+			go r.asCandidate("no leader touched")
 			return
 
 		case e := <-r.events:
@@ -56,6 +56,10 @@ func (r *Raft) asFollower() {
 
 				if len(req.Entries) == 0 {
 					// This is a heartbeat.
+					e.respCh <- &pb.AppendEntriesResponse{
+						Term:    r.currentTerm,
+						Success: true,
+					}
 					break
 				}
 

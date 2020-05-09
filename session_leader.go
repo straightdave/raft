@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"log"
+	"runtime/debug"
 	"time"
 
 	"google.golang.org/grpc"
@@ -15,7 +16,7 @@ const (
 	retryInterval     = 100 * time.Millisecond
 )
 
-func (r *Raft) asLeader() {
+func (r *Raft) asLeader(reasons ...string) {
 	// the session lock makes sure that new session must start after
 	// the previous session endr.
 	r.sessionLock.Lock()
@@ -33,7 +34,7 @@ func (r *Raft) asLeader() {
 	// since during session transforming, no serving, no reading.
 	r.role = Leader
 	r.resetIndices()
-	log.Printf("%s becomes LEADER {term=%d}", r.selfID, r.currentTerm)
+	log.Printf("%s becomes LEADER {term=%d} due to reasons=%v", r.selfID, r.currentTerm, reasons)
 
 	heartbeatTicker := time.NewTicker(heartbeatInterval)
 	defer heartbeatTicker.Stop()
@@ -45,18 +46,18 @@ func (r *Raft) asLeader() {
 	for {
 		select {
 
+		// periodically send heartbeat
+		case <-heartbeatTicker.C:
+			go r.callPeers(ctx, nil, fallBackCh)
+
 		// handle the fallback signals and quit
 		case term := <-fallBackCh:
 			r.currentTerm = term
-			go r.asFollower()
+			go r.asFollower("fallback required")
 			// since session is locked until asLeader session ends,
 			// so here `go r.asFollower()` will start a goroutine but block
 			// until all deferred actions are done in leader session.
 			return
-
-		// periodically send heartbeat
-		case <-heartbeatTicker.C:
-			go r.callPeers(ctx, nil, fallBackCh)
 
 		// handle events (mainly internal raft or external requests)
 		// each event payload contains:
@@ -136,7 +137,7 @@ func (r *Raft) callPeers(ctx context.Context, entries []*pb.CommandEntry, needFa
 		count     = 0
 	)
 
-	// sending the requests to each peer forever until it's success,
+	// sending the requests to each peer forever until success,
 	// or the leader session ends from outside (ctx is done).
 	for _, addr := range r.peers {
 		go func(ctx context.Context, addr string) {
@@ -147,7 +148,7 @@ func (r *Raft) callPeers(ctx context.Context, entries []*pb.CommandEntry, needFa
 				default:
 				}
 
-				resp, err := r.appendEntries(addr, entries)
+				resp, err := r.appendEntries(ctx, addr, entries)
 				if err == nil {
 					responses <- resp
 					return
@@ -178,23 +179,25 @@ func (r *Raft) callPeers(ctx context.Context, entries []*pb.CommandEntry, needFa
 	}
 }
 
-func (r *Raft) appendEntries(addr string, entries []*pb.CommandEntry) (resp *pb.AppendEntriesResponse, err error) {
+func (r *Raft) appendEntries(ctx context.Context, addr string, entries []*pb.CommandEntry) (resp *pb.AppendEntriesResponse, err error) {
 	defer rescue(func(e error) {
 		err = e
+		log.Printf("rescue: [%s] RPC RequestVote: %v\nStack: %s", addr, err, debug.Stack())
 	})
 
 	var (
 		lastIndex = uint64(len(r.logs) - 1)
 		cc        *grpc.ClientConn
-		ctx       = context.Background()
 	)
 
-	cc, err = grpc.Dial(addr)
+	cc, err = grpc.Dial(addr, grpc.WithInsecure())
 	if err != nil {
+		log.Printf("error: [%s] dialing failed: %v", addr, err)
 		return
 	}
-
+	defer cc.Close()
 	c := pb.NewRaftClient(cc)
+
 	return c.AppendEntries(ctx, &pb.AppendEntriesRequest{
 		Term:         r.currentTerm,
 		LeaderId:     r.selfID,
